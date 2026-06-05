@@ -1,0 +1,14 @@
+{
+  "name": "pdf-merger-app",
+  "version": "1.0.0",
+  "description": "A simple PDF merging app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-lib": "^1.17.1"
+  }
+}
