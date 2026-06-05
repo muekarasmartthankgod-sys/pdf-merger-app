@@ -1,17 +1,17 @@
 const express = require('express');
 const multer = require('multer');
 const { PDFDocument } = require('pdf-lib');
-const path = require('path');
+const cors = require('cors'); 
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Use memory storage so we don't save files to disk (better for cloud deployment)
+// Enable Cross-Origin Resource Sharing (CORS) so your website can talk to this server
+app.use(cors()); 
+
+// Use memory storage to process files without saving them to Render's disk
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
-
-// Serve static files (like your frontend HTML/CSS) from a 'public' directory
-app.use(express.static('public'));
 
 app.post('/merge', upload.array('pdfs', 10), async (req, res) => {
     try {
@@ -34,7 +34,7 @@ app.post('/merge', upload.array('pdfs', 10), async (req, res) => {
 
         // Set headers to trigger a file download in the browser
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename=merged.pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=Merged_Document.pdf');
         res.send(Buffer.from(mergedPdfBytes));
 
     } catch (error) {
@@ -44,5 +44,5 @@ app.post('/merge', upload.array('pdfs', 10), async (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`PDF Merger app listening on port ${port}`);
+    console.log(`PDF Merger backend listening on port ${port}`);
 });
