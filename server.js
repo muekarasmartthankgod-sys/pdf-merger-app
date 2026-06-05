@@ -105,7 +105,7 @@ app.post('/generate-invoice', async (req, res) => {
             page.drawText(`$${item.val || '0.00'}`, { x: 460, y: currentY, size: 10, font: fontReg });
             
             totalValue += Number(item.val || 0);
-            currentY -= 20; // Move down 20 pixels for the next row
+            currentY -= 20;
         });
 
         // Totals
@@ -115,4 +115,86 @@ app.post('/generate-invoice', async (req, res) => {
         page.drawText(`$${totalValue.toFixed(2)}`, { x: 460, y: currentY - 25, size: 12, font: fontBold, color: rgb(0.8, 0.1, 0.1) });
 
         const pdfBytes = await pdfDoc.save();
-        res.setHeader('Content-Type', 'application/
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Invoice_${invoiceNum}.pdf`);
+        res.send(Buffer.from(pdfBytes));
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error generating invoice.');
+    }
+});
+
+// ---------------------------------------------------------
+// 4. MULTI-ITEM PACKING LIST GENERATOR
+// ---------------------------------------------------------
+app.post('/generate-packing-list', async (req, res) => {
+    try {
+        const { plNum, shipper, consignee, items } = req.body;
+        if (!plNum || !shipper || !consignee || !items || items.length === 0) {
+            return res.status(400).send('Missing required fields or items.');
+        }
+
+        const pdfDoc = await PDFDocument.create();
+        const page = pdfDoc.addPage([600, 800]);
+        const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+        // Headers
+        page.drawText('PACKING LIST', { x: 50, y: 740, size: 24, font: fontBold, color: rgb(0.1, 0.5, 0.3) });
+        page.drawText(`Ref: ${plNum}`, { x: 400, y: 745, size: 12, font: fontBold });
+        page.drawText(`Date: ${new Date().toLocaleDateString()}`, { x: 400, y: 730, size: 11, font: fontReg });
+
+        page.drawText('SHIPPER:', { x: 50, y: 680, size: 12, font: fontBold });
+        page.drawText(shipper, { x: 50, y: 660, size: 11, font: fontReg, maxWidth: 220, lineHeight: 15 });
+        page.drawText('CONSIGNEE:', { x: 320, y: 680, size: 12, font: fontBold });
+        page.drawText(consignee, { x: 320, y: 660, size: 11, font: fontReg, maxWidth: 220, lineHeight: 15 });
+
+        // Table Header
+        page.drawRectangle({ x: 50, y: 500, width: 500, height: 30, color: rgb(0.9, 0.95, 0.9) });
+        page.drawText('Type', { x: 60, y: 510, size: 11, font: fontBold });
+        page.drawText('Qty', { x: 180, y: 510, size: 11, font: fontBold });
+        page.drawText('Gross Wt', { x: 260, y: 510, size: 11, font: fontBold });
+        page.drawText('Net Wt', { x: 370, y: 510, size: 11, font: fontBold });
+        page.drawText('Vol (CBM)', { x: 470, y: 510, size: 11, font: fontBold });
+
+        let currentY = 475;
+        let tQty = 0, tGross = 0, tNet = 0, tCbm = 0;
+
+        // Loop through items
+        items.forEach((item) => {
+            page.drawText(item.type || 'Pallet', { x: 60, y: currentY, size: 10, font: fontReg });
+            page.drawText(String(item.qty || '0'), { x: 180, y: currentY, size: 10, font: fontReg });
+            page.drawText(String(item.gross || '0'), { x: 260, y: currentY, size: 10, font: fontReg });
+            page.drawText(String(item.net || '0'), { x: 370, y: currentY, size: 10, font: fontReg });
+            page.drawText(String(item.cbm || '0'), { x: 470, y: currentY, size: 10, font: fontReg });
+
+            tQty += Number(item.qty || 0);
+            tGross += Number(item.gross || 0);
+            tNet += Number(item.net || 0);
+            tCbm += Number(item.cbm || 0);
+            
+            currentY -= 20;
+        });
+
+        // Totals
+        currentY -= 10;
+        page.drawLine({ start: { x: 50, y: currentY }, end: { x: 550, y: currentY }, thickness: 1, color: rgb(0.7, 0.7, 0.7) });
+        page.drawText(`TOTALS:`, { x: 60, y: currentY - 25, size: 11, font: fontBold });
+        page.drawText(`${tQty}`, { x: 180, y: currentY - 25, size: 11, font: fontBold });
+        page.drawText(`${tGross} KG`, { x: 260, y: currentY - 25, size: 11, font: fontBold });
+        page.drawText(`${tNet} KG`, { x: 370, y: currentY - 25, size: 11, font: fontBold });
+        page.drawText(`${tCbm.toFixed(2)}`, { x: 470, y: currentY - 25, size: 11, font: fontBold });
+
+        const pdfBytes = await pdfDoc.save();
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=PackingList_${plNum}.pdf`);
+        res.send(Buffer.from(pdfBytes));
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error generating packing list.');
+    }
+});
+
+app.listen(port, () => {
+    console.log(`Maitaf-AI Logistics Hub listening on port ${port}`);
+});
