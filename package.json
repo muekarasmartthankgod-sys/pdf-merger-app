@@ -1,7 +1,7 @@
 {
   "name": "pdf-merger-app",
   "version": "1.0.0",
-  "description": "A simple PDF merging app",
+  "description": "Logistics Suite Hub",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +10,8 @@
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1",
-    "pdf-lib": "^1.17.1"
+    "openai": "^4.52.0",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^1.1.1"
   }
 }
