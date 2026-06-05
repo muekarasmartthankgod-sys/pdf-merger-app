@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const cors = require('cors'); 
 const pdfParse = require('pdf-parse');
 const { OpenAI } = require('openai');
@@ -8,7 +8,6 @@ const { OpenAI } = require('openai');
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Initialize OpenAI client using the secure environment variable
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
@@ -21,7 +20,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // ---------------------------------------------------------
-// TOOL 1: PDF Merger (Your working code)
+// TOOL 1: PDF Merger
 // ---------------------------------------------------------
 app.post('/merge', upload.array('pdfs', 20), async (req, res) => {
     try {
@@ -49,54 +48,92 @@ app.post('/merge', upload.array('pdfs', 20), async (req, res) => {
 // ---------------------------------------------------------
 app.post('/standardize-rates', upload.single('rateSheet'), async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).send('No rate sheet file uploaded.');
-        }
-
-        // 1. Extract raw text from the uploaded PDF
+        if (!req.file) return res.status(400).send('No rate sheet file uploaded.');
         const pdfData = await pdfParse(req.file.buffer);
         const extractedText = pdfData.text;
-
         if (!extractedText || extractedText.trim().length === 0) {
-            return res.status(400).send('Could not read text from this PDF. Is it an un-scanned image?');
+            return res.status(400).send('Could not read text from this PDF.');
         }
 
-        // 2. Send the raw text to OpenAI to parse tabular structures
         const response = await openai.chat.completions.create({
             model: "gpt-4o",
-            response_format: { type: "json_object" }, // Forces structured output
+            response_format: { type: "json_object" },
             messages: [
                 {
                     role: "system",
-                    content: `You are an expert freight logistics data analyst. Analyze the raw text of the carrier rate sheet provided. 
-                    Extract all individual pricing and freight lane rows.
-                    You must return a JSON object containing a single key "rates" which maps to an array of objects.
-                    Each object inside the "rates" array must strictly contain these keys:
-                    - "Origin" (City/Port)
-                    - "Destination" (City/Port)
-                    - "Container_Size" (e.g., 20ft, 40ft, LCL, or N/A)
-                    - "Base_Rate" (The numerical price value, e.g., 1200)
-                    - "Currency" (e.g., USD, EUR, GBP)
-                    - "Surcharges" (Any BAF, THC, or local fees found, or "None")
-                    - "Validity" (Expiration date if found, or "Unknown")
-
-                    If any column data is missing for a row, provide "N/A". Do not return any extra markdown text outside the JSON.`
+                    content: `You are an expert freight logistics data analyst. Extract pricing lanes into a JSON structure with a single "rates" array key containing objects with: "Origin", "Destination", "Container_Size", "Base_Rate", "Currency", "Surcharges", "Validity".`
                 },
-                {
-                    role: "user",
-                    content: extractedText
-                }
+                { role: "user", content: extractedText }
             ],
-            temperature: 0.1 // Low temperature keeps extraction accurate and factual
+            temperature: 0.1
         });
 
-        // 3. Send the structured JSON response back to the front-end
-        const resultJson = JSON.parse(response.choices[0].message.content);
-        res.json(resultJson);
-
+        res.json(JSON.parse(response.choices[0].message.content));
     } catch (error) {
         console.error('Standardizer Error:', error);
         res.status(500).send(error.message || 'Error parsing rate sheet.');
+    }
+});
+
+// ---------------------------------------------------------
+// TOOL 3: Automated Document Generator (NEW!)
+// ---------------------------------------------------------
+app.post('/generate-invoice', async (req, res) => {
+    try {
+        const { invoiceNum, shipper, consignee, description, weight, value } = req.body;
+
+        if (!invoiceNum || !shipper || !consignee) {
+            return res.status(400).send('Missing required invoice fields.');
+        }
+
+        // Create a blank PDF document from scratch
+        const pdfDoc = await PDFDocument.create();
+        const page = pdfDoc.addPage([600, 800]);
+        const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+        // Header Title
+        page.drawText('COMMERCIAL INVOICE', { x: 50, y: 740, size: 24, font: helveticaBold, color: rgb(0.1, 0.2, 0.4) });
+        
+        // Invoice Meta Data
+        page.drawText(`Invoice Number: ${invoiceNum}`, { x: 400, y: 745, size: 12, font: helveticaBold });
+        page.drawText(`Date: ${new Date().toLocaleDateString()}`, { x: 400, y: 730, size: 11, font: helvetica });
+
+        // Shipper & Consignee Columns
+        page.drawText('SHIPPER / EXPORTER:', { x: 50, y: 680, size: 12, font: helveticaBold });
+        page.drawText(shipper, { x: 50, y: 660, size: 11, font: helvetica, maxWidth: 220, lineHeight: 15 });
+
+        page.drawText('CONSIGNEE / IMPORTER:', { x: 320, y: 680, size: 12, font: helveticaBold });
+        page.drawText(consignee, { x: 320, y: 660, size: 11, font: helvetica, maxWidth: 220, lineHeight: 15 });
+
+        // Table Borders & Headers
+        page.drawRectangle({ x: 50, y: 500, width: 500, height: 30, color: rgb(0.9, 0.9, 0.95) });
+        page.drawText('Description of Goods', { x: 60, y: 510, size: 11, font: helveticaBold });
+        page.drawText('Weight (KG)', { x: 340, y: 510, size: 11, font: helveticaBold });
+        page.drawText('Value (USD)', { x: 460, y: 510, size: 11, font: helveticaBold });
+
+        // Table Rows (Data Inputted from Frontend)
+        page.drawText(description || 'General Cargo', { x: 60, y: 475, size: 11, font: helvetica });
+        page.drawText(weight || '0', { x: 340, y: 475, size: 11, font: helvetica });
+        page.drawText(`$${value || '0.00'}`, { x: 460, y: 475, size: 11, font: helvetica });
+
+        // Total Summary
+        page.drawLine({ start: { x: 50, y: 440 }, end: { x: 550, y: 440 }, thickness: 1, color: rgb(0.7, 0.7, 0.7) });
+        page.drawText('TOTAL DECLARED VALUE:', { x: 300, y: 415, size: 11, font: helveticaBold });
+        page.drawText(`$${value || '0.00'}`, { x: 460, y: 415, size: 12, font: helveticaBold, color: rgb(0.8, 0.1, 0.1) });
+
+        // Footer Certification text
+        page.drawText('We hereby certify that this invoice is true and correct.', { x: 50, y: 150, size: 10, font: helvetica, style: 'italic' });
+
+        const pdfBytes = await pdfDoc.save();
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Invoice_${invoiceNum}.pdf`);
+        res.send(Buffer.from(pdfBytes));
+
+    } catch (error) {
+        console.error('Invoice Generator Error:', error);
+        res.status(500).send(error.message || 'Error generating invoice document.');
     }
 });
 
